@@ -192,7 +192,8 @@ impl<P: Provider> CachedProvider<P>
 where
     P::Header: Clone + Serialize + DeserializeOwned,
 {
-    pub fn populate_accounts_and_storage(
+    // populate the cache with balance, nonce, and storage values for the acounts and storage keys in the access list
+    pub fn cache_access_list(
         &self,
         access_list: AccessList,
         block: BlockNumber,
