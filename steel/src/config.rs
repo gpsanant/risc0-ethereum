@@ -45,6 +45,18 @@ pub static ETH_SEPOLIA_CHAIN_SPEC: Lazy<ChainSpec> = Lazy::new(|| ChainSpec {
     gas_constants: BTreeMap::from([(SpecId::LONDON, EIP1559_CONSTANTS_DEFAULT)]),
 });
 
+// source: https://github.com/eth-clients/holesky
+pub static ETH_HOLESKY_CHAIN_SPEC: Lazy<ChainSpec> = Lazy::new(|| ChainSpec {
+    chain_id: 17000,
+    max_spec_id: SpecId::CANCUN,
+    hard_forks: BTreeMap::from([
+        (SpecId::MERGE, ForkCondition::Block(0)), //merged from genesis
+        (SpecId::SHANGHAI, ForkCondition::Timestamp(1696000704)),
+        (SpecId::CANCUN, ForkCondition::Timestamp(1707305664)),
+    ]),
+    gas_constants: BTreeMap::from([(SpecId::LONDON, EIP1559_CONSTANTS_DEFAULT)]),
+});
+
 /// The gas constants as defined in [EIP-1559](https://eips.ethereum.org/EIPS/eip-1559).
 pub const EIP1559_CONSTANTS_DEFAULT: Eip1559Constants = Eip1559Constants {
     base_fee_change_denominator: 8,
