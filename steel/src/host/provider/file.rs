@@ -16,14 +16,10 @@ use super::{EIP1186Proof, NullProvider, Provider};
 use crate::{ethereum::EthBlockHeader, EvmBlockHeader};
 use alloy_primitives::{Address, BlockNumber, Bytes, StorageKey, StorageValue, TxNumber, U256};
 use anyhow::Context;
+use ethers_core::types::transaction::eip2930::AccessList;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use std::{
-    cell::RefCell,
-    collections::{hash_map::Entry, BTreeSet, HashMap},
-    fs::{self, File},
-    io::{BufReader, BufWriter},
-    marker::PhantomData,
-    path::PathBuf,
+    cell::RefCell, collections::{hash_map::Entry, BTreeSet, HashMap}, fs::{self, File}, io::{BufReader, BufWriter}, marker::PhantomData, path::PathBuf
 };
 
 /// A provider that caches responses from an underlying provider in a JSON file.
@@ -188,6 +184,86 @@ where
                 Ok(entry.insert(proof).clone())
             }
         }
+    }
+}
+
+// add a populate function to the provider
+impl<P: Provider> CachedProvider<P>
+where
+    P::Header: Clone + Serialize + DeserializeOwned,
+{
+    pub fn populate_accounts_and_storage(
+        &self,
+        access_list: AccessList,
+        block: BlockNumber,
+    ) -> Result<(), P::Error> {
+
+
+        for access_list_item in access_list.0 {
+            let address = Address::from_slice(access_list_item.address.as_bytes());
+            let keys: Vec<StorageKey> = access_list_item
+                .storage_keys
+                .iter()
+                .map(|key| StorageKey::from_slice(key.as_bytes()))
+                .collect();
+
+            let storage_keys: BTreeSet<alloy_primitives::FixedBytes<32>> = keys.iter().cloned().collect();
+            let proof = self.inner.get_proof(address, keys, block)?;
+            match self.cache.borrow_mut().proofs.entry(ProofQuery {
+                block_no: block,
+                address,
+                storage_keys,
+            }) {
+                Entry::Occupied(entry) => {
+                    // make sure the entry are the same
+                    assert_eq!(entry.get(), &proof, "proof cache mismatch");
+                }
+                Entry::Vacant(entry) => {
+                    entry.insert(proof.clone());
+                }
+            }
+            match self.cache.borrow_mut().balance.entry(AccountQuery {
+                block_no: block,
+                address,
+            }) {
+                Entry::Occupied(entry) => {
+                    // make sure the entry are the same
+                    assert_eq!(entry.get(), &proof.balance, "balance cache mismatch");
+                }
+                Entry::Vacant(entry) => {
+                    entry.insert(proof.balance);
+                }
+                
+            }
+            match self.cache.borrow_mut().transaction_count.entry(AccountQuery {
+                block_no: block,
+                address,
+            }) {
+                Entry::Occupied(entry) => {
+                    // make sure the entry are the same
+                    assert_eq!(entry.get(), &proof.nonce, "nonce cache mismatch");
+                }
+                Entry::Vacant(entry) => {
+                    entry.insert(proof.nonce);
+                }
+            }
+            for storage in proof.storage_proof {
+                match self.cache.borrow_mut().storage.entry(StorageQuery {
+                    block_no: block,
+                    address,
+                    key: storage.key,
+                }) {
+                    Entry::Occupied(entry) => {
+                        // make sure the entry are the same
+                        assert_eq!(entry.get(), &storage.value, "storage cache mismatch");
+                    }
+                    Entry::Vacant(entry) => {
+                        entry.insert(storage.value);
+                    }
+                }
+            }
+        }
+        Ok(())
     }
 }
 
