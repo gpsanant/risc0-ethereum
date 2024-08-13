@@ -19,13 +19,10 @@ use crate::{
     ethereum::EthEvmEnv, state::StateAccount, EvmBlockHeader, EvmEnv, EvmInput, MerkleTrie,
 };
 use alloy::{
-    network::{Ethereum, Network},
-    providers::{Provider, ProviderBuilder, RootProvider},
-    rpc::types::Header as RpcHeader,
-    transports::{
+    network::{Ethereum, Network}, providers::{Provider, ProviderBuilder, RootProvider}, rpc::types::{EIP1186AccountProofResponse, Header as RpcHeader}, transports::{
         http::{Client, Http},
         Transport,
-    },
+    }
 };
 use alloy_primitives::{keccak256, StorageKey};
 use anyhow::{anyhow, ensure, Context};
@@ -96,15 +93,29 @@ where
         // retrieve EIP-1186 proofs for all accounts
         let mut proofs = Vec::new();
         for (address, storage_keys) in db.accounts() {
-            let proof = provider
-                .get_proof(
-                    *address,
-                    storage_keys.iter().map(|v| StorageKey::from(*v)).collect(),
-                )
-                .number(block_number)
-                .await
-                .context("eth_getProof failed")?;
-            proofs.push(proof);
+            let mut first_iteration = true;
+            let mut proof_for_account: EIP1186AccountProofResponse = Default::default();
+            
+            // loop through storage keys in groups of num_keys_per_request
+            let num_keys_per_request = 1000;
+            // chunk the storage keys into groups of num_keys_per_request
+            let storage_keys: Vec<_> = storage_keys.iter().map(|v| StorageKey::from(*v)).collect();
+            for chunk in storage_keys.chunks(num_keys_per_request) {
+                let proof = provider
+                    .get_proof(*address, chunk.to_vec())
+                    .number(block_number)
+                    .await
+                    .context("eth_getProof failed")?;
+                
+                if first_iteration {
+                    proof_for_account = proof;
+                    first_iteration = false;
+                } else {
+                    // merge the proofs
+                    proof_for_account.storage_proof.extend(proof.storage_proof);
+                }
+            }
+            proofs.push(proof_for_account);
         }
 
         // build the sparse MPT for the state and verify it against the header
