@@ -93,9 +93,12 @@ where
         // retrieve EIP-1186 proofs for all accounts
         let mut proofs = Vec::new();
         for (address, storage_keys) in db.accounts() {
-            let mut first_iteration = true;
-            let mut proof_for_account: EIP1186AccountProofResponse = Default::default();
-            
+            let mut proof_for_account: EIP1186AccountProofResponse = provider
+                .get_proof(*address, vec![])
+                .number(block_number)
+                .await
+                .context("eth_getProof failed")?;
+
             // loop through storage keys in groups of num_keys_per_request
             let num_keys_per_request = 1000;
             // chunk the storage keys into groups of num_keys_per_request
@@ -106,14 +109,8 @@ where
                     .number(block_number)
                     .await
                     .context("eth_getProof failed")?;
-                
-                if first_iteration {
-                    proof_for_account = proof;
-                    first_iteration = false;
-                } else {
-                    // merge the proofs
+
                     proof_for_account.storage_proof.extend(proof.storage_proof);
-                }
             }
             proofs.push(proof_for_account);
         }
